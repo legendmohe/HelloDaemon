@@ -1,3 +1,5 @@
+注: 此fork去掉了RxJava和Android Support Annotation依赖
+
 # HelloDaemon
 ### Android 服务保活/常驻 (Android Service Daemon)
 

@@ -1,10 +1,12 @@
 package com.xdandroid.hellodaemon;
 
-import android.app.*;
-import android.content.*;
-import android.content.pm.*;
-import android.os.*;
-import android.support.annotation.*;
+import android.app.Notification;
+import android.app.Service;
+import android.content.ComponentName;
+import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.os.Build;
+import android.os.IBinder;
 
 public abstract class AbsWorkService extends Service {
 
@@ -32,7 +34,8 @@ public abstract class AbsWorkService extends Service {
      * @return 任务正在运行, true; 任务当前不在运行, false; 无法判断, 什么也不做, null.
      */
     public abstract Boolean isWorkRunning(Intent intent, int flags, int startId);
-    @Nullable public abstract IBinder onBind(Intent intent, Void alwaysNull);
+
+    public abstract IBinder onBind(Intent intent, Void alwaysNull);
     public abstract void onServiceKilled(Intent rootIntent);
 
     /**
@@ -101,7 +104,6 @@ public abstract class AbsWorkService extends Service {
         return onStart(intent, flags, startId);
     }
 
-    @Nullable
     @Override
     public IBinder onBind(Intent intent) {
         onStart(intent, 0, 0);

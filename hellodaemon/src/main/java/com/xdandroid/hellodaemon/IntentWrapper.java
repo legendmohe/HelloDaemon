@@ -1,14 +1,21 @@
 package com.xdandroid.hellodaemon;
 
-import android.app.*;
-import android.content.*;
-import android.content.pm.*;
-import android.net.*;
-import android.os.*;
-import android.provider.*;
-import android.support.annotation.NonNull;
+import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.ComponentName;
+import android.content.Context;
+import android.content.DialogInterface;
+import android.content.Intent;
+import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
+import android.net.Uri;
+import android.os.Build;
+import android.os.PowerManager;
+import android.provider.Settings;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
 
 public class IntentWrapper {
 
@@ -197,7 +204,6 @@ public class IntentWrapper {
      * 处理白名单.
      * @return 弹过框的 IntentWrapper.
      */
-    @NonNull
     public static List<IntentWrapper> whiteListMatters(final Activity a, String reason) {
         List<IntentWrapper> showed = new ArrayList<>();
         if (reason == null) reason = "核心服务的持续运行";

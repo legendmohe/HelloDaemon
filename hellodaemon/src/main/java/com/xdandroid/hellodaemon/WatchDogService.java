@@ -12,17 +12,19 @@ import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.IBinder;
 
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
-
-import io.reactivex.Flowable;
-import io.reactivex.disposables.Disposable;
-import io.reactivex.functions.Consumer;
 
 public class WatchDogService extends Service {
 
     protected static final int HASH_CODE = 2;
 
-    protected static Disposable sDisposable;
+    private static final ScheduledExecutorService mExecutorService = Executors.newSingleThreadScheduledExecutor();
+
+    private static ScheduledFuture<?> sScheduledFuture;
+
     protected static PendingIntent sPendingIntent;
 
     /**
@@ -30,14 +32,19 @@ public class WatchDogService extends Service {
      */
     protected final int onStart(Intent intent, int flags, int startId) {
 
-        if (!DaemonEnv.sInitialized) return START_STICKY;
+        if (!DaemonEnv.sInitialized)
+            return START_STICKY;
 
-        if (sDisposable != null && !sDisposable.isDisposed()) return START_STICKY;
+        if (sScheduledFuture != null && !sScheduledFuture.isCancelled())
+            return START_STICKY;
 
         if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.N) {
             startForeground(HASH_CODE, new Notification());
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2)
-                try {startService(new Intent(DaemonEnv.sApp, WatchDogNotificationService.class));} catch (Exception ignored) {}
+                try {
+                    startService(new Intent(DaemonEnv.sApp, WatchDogNotificationService.class));
+                } catch (Exception ignored) {
+                }
         }
 
         //定时检查 AbsWorkService 是否在运行，如果不在运行就把它拉起来
@@ -46,7 +53,8 @@ public class WatchDogService extends Service {
             JobInfo.Builder builder = new JobInfo.Builder(HASH_CODE, new ComponentName(DaemonEnv.sApp, JobSchedulerService.class));
             builder.setPeriodic(DaemonEnv.getWakeUpInterval());
             //Android 7.0+ 增加了一项针对 JobScheduler 的新限制，最小间隔只能是下面设定的数字
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) builder.setPeriodic(JobInfo.getMinPeriodMillis(), JobInfo.getMinFlexMillis());
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N)
+                builder.setPeriodic(JobInfo.getMinPeriodMillis(), JobInfo.getMinFlexMillis());
             builder.setPersisted(true);
             JobScheduler scheduler = (JobScheduler) getSystemService(JOB_SCHEDULER_SERVICE);
             scheduler.schedule(builder.build());
@@ -59,19 +67,17 @@ public class WatchDogService extends Service {
         }
 
         //使用定时 Observable，避免 Android 定制系统 JobScheduler / AlarmManager 唤醒间隔不稳定的情况
-        sDisposable = Flowable
-                .interval(DaemonEnv.getWakeUpInterval(), TimeUnit.MILLISECONDS)
-                .subscribe(new Consumer<Long>() {
+        sScheduledFuture = mExecutorService.scheduleWithFixedDelay(
+                new Runnable() {
                     @Override
-                    public void accept(Long aLong) throws Exception {
+                    public void run() {
                         startService(new Intent(DaemonEnv.sApp, DaemonEnv.sServiceClass));
                     }
-                }, new Consumer<Throwable>() {
-                    @Override
-                    public void accept(Throwable throwable) throws Exception {
-                        throwable.printStackTrace();
-                    }
-                });
+                },
+                DaemonEnv.getWakeUpInterval(),
+                DaemonEnv.getWakeUpInterval(),
+                TimeUnit.MILLISECONDS
+        );
 
         //守护 Service 组件的启用状态, 使其不被 MAT 等工具禁用
         getPackageManager().setComponentEnabledSetting(new ComponentName(getPackageName(), DaemonEnv.sServiceClass.getName()),
@@ -93,8 +99,14 @@ public class WatchDogService extends Service {
 
     protected void onEnd(Intent rootIntent) {
         if (!DaemonEnv.sInitialized) return;
-        try {startService(new Intent(DaemonEnv.sApp, DaemonEnv.sServiceClass));} catch (Exception ignored) {}
-        try {startService(new Intent(DaemonEnv.sApp, WatchDogService.class));} catch (Exception ignored) {}
+        try {
+            startService(new Intent(DaemonEnv.sApp, DaemonEnv.sServiceClass));
+        } catch (Exception ignored) {
+        }
+        try {
+            startService(new Intent(DaemonEnv.sApp, WatchDogService.class));
+        } catch (Exception ignored) {
+        }
     }
 
     /**
@@ -115,7 +127,7 @@ public class WatchDogService extends Service {
 
     /**
      * 用于在不需要服务运行的时候取消 Job / Alarm / Subscription.
-     *
+     * <p>
      * 因 WatchDogService 运行在 :watch 子进程, 请勿在主进程中直接调用此方法.
      * 而是向 WakeUpReceiver 发送一个 Action 为 WakeUpReceiver.ACTION_CANCEL_JOB_ALARM_SUB 的广播.
      */
@@ -128,7 +140,10 @@ public class WatchDogService extends Service {
             AlarmManager am = (AlarmManager) DaemonEnv.sApp.getSystemService(ALARM_SERVICE);
             if (sPendingIntent != null) am.cancel(sPendingIntent);
         }
-        if (sDisposable != null) sDisposable.dispose();
+        if (sScheduledFuture != null) {
+            sScheduledFuture.cancel(true);
+            sScheduledFuture = null;
+        }
     }
 
     public static class WatchDogNotificationService extends Service {
